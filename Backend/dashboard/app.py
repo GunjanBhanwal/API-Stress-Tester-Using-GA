@@ -2,9 +2,12 @@ import os
 import json
 import subprocess
 import sys
-from flask import Flask, jsonify, request, render_template, send_file
+from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 from dotenv import load_dotenv
+
+# ── Always run from Backend/ root regardless of where script is launched from
+os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 load_dotenv(dotenv_path="dashboard/.env")
 
@@ -47,6 +50,12 @@ def is_engine_running():
     return engine_process.poll() is None
 
 
+def pick_script(mode):
+    if mode == "baseline":
+        return BASELINE_SCRIPT
+    return ENGINE_SCRIPT
+
+
 # =============================================================
 # /api/start
 # React calls this when user clicks Run
@@ -68,14 +77,14 @@ def start_engine():
     # Write config so the engine picks it up
     write_config(data)
 
-    # Clear previous results
-    if os.path.exists(DATA_FILE):
-        os.remove(DATA_FILE)
+    # Clear previous results and report
+    for f in [DATA_FILE, REPORT_FILE]:
+        if os.path.exists(f):
+            os.remove(f)
 
-    # Spawn engine as a subprocess
-    # sys.executable = the same Python that is running this file right now
+    script = pick_script(data.get("mode", "adaptive"))
     engine_process = subprocess.Popen(
-        [sys.executable, ENGINE_SCRIPT],
+        [sys.executable, script],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT
     )
@@ -154,11 +163,23 @@ def download_report():
                 "message": "No results to generate report from"
             }), 404
 
-        # Spawn report generator as subprocess
-        subprocess.run(
-            [sys.executable, "engine/report_generator.py"],
-            check=True
-        )
+        try:
+            result = subprocess.run(
+                [sys.executable, "engine/report_generator.py"],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            print("[DASHBOARD] Report generated successfully.")
+            print(result.stdout)
+        except subprocess.CalledProcessError as e:
+            print("[DASHBOARD] Report generator FAILED:")
+            print(e.stdout)
+            print(e.stderr)
+            return jsonify({
+                "status":  "error",
+                "message": e.stderr or e.stdout or "Report generation failed"
+            }), 500
 
     if not os.path.exists(REPORT_FILE):
         return jsonify({
@@ -167,7 +188,7 @@ def download_report():
         }), 500
 
     return send_file(
-        REPORT_FILE,
+        os.path.abspath(REPORT_FILE),
         mimetype="application/pdf",
         as_attachment=True,
         download_name="chaos_gen_report.pdf"

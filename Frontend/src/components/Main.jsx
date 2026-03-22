@@ -4,109 +4,86 @@ import {
   PointElement, LineElement, Title, Tooltip, Legend, Filler,
 } from "chart.js";
 import { Line } from "react-chartjs-2";
-import { T, chartDefaults } from "./Header";
+import { chartDefaults } from "./Header";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler);
 
-// ── Shared primitives (local to Main) ─────────────────────────────────────────
+// Dynamic key colors — must stay inline since they're runtime values
+const KEY_PALETTE = { items: "#f59e0b", email: "#60a5fa", username: "#4ade80", metadata: "#a78bfa" };
+const keyCol = k => KEY_PALETTE[k] ?? "#6b7280";
+
+// ── Primitives ────────────────────────────────────────────────────────────────
 function Label({ children }) {
-  return (
-    <div style={{ fontSize: 9, color: T.textDim, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8, fontFamily: T.mono }}>
-      {children}
-    </div>
-  );
+  return <div className="text-[9px] text-dim tracking-[0.1em] uppercase mb-2 font-mono">{children}</div>;
 }
 
-function Input({ value, onChange, placeholder, type = "text", style = {} }) {
+function TextInput({ value, onChange, placeholder, type = "text", className = "" }) {
   return (
     <input
       type={type} value={value} onChange={onChange} placeholder={placeholder}
-      style={{
-        background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4,
-        color: T.text, fontFamily: T.mono, fontSize: 11, padding: "6px 10px",
-        outline: "none", width: "100%", transition: "border-color 0.12s", ...style,
-      }}
-      onFocus={e => (e.target.style.borderColor = T.amber + "60")}
-      onBlur={e => (e.target.style.borderColor = T.border)}
+      className={`bg-surface border border-border rounded text-text font-mono text-[11px] px-2.5 py-1.5 outline-none w-full transition-colors focus:border-amber/50 placeholder:text-dim ${className}`}
     />
   );
 }
 
-function Textarea({ value, onChange, rows = 9 }) {
+function Textarea({ value, onChange }) {
   return (
     <textarea
-      value={value} onChange={onChange} rows={rows}
-      style={{
-        background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4,
-        color: T.green, fontFamily: T.mono, fontSize: 11, padding: "8px 10px",
-        outline: "none", width: "100%", resize: "vertical", lineHeight: 1.65,
-        transition: "border-color 0.12s",
-      }}
-      onFocus={e => (e.target.style.borderColor = T.green + "55")}
-      onBlur={e => (e.target.style.borderColor = T.border)}
+      value={value} onChange={onChange} rows={9}
+      className="bg-surface border border-border rounded text-success font-mono text-[11px] px-2.5 py-2 outline-none w-full resize-y leading-relaxed transition-colors focus:border-success/40"
     />
   );
 }
 
-function Tag({ label, color = T.amber }) {
+function Tag({ label, color }) {
   return (
-    <span style={{
-      background: color + "18", color, border: `1px solid ${color}40`,
-      borderRadius: 3, padding: "1px 8px", fontSize: 10,
-      fontFamily: T.mono, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap",
-    }}>{label}</span>
+    <span className="rounded px-2 py-0.5 text-[10px] font-mono tracking-[0.06em] uppercase whitespace-nowrap border"
+      style={{ background: color + "18", color, borderColor: color + "40" }}>
+      {label}
+    </span>
   );
 }
 
-function Pill({ active, onClick, children, color = T.amber }) {
+function Pill({ active, onClick, children, color }) {
   return (
-    <button onClick={onClick} style={{
-      background: active ? color + "1a" : "transparent",
-      color: active ? color : T.textDim,
-      border: `1px solid ${active ? color + "55" : T.border}`,
-      borderRadius: 4, padding: "3px 10px", fontSize: 10,
-      fontFamily: T.mono, letterSpacing: "0.06em",
-      cursor: "pointer", transition: "all 0.12s", textTransform: "uppercase",
-    }}>{children}</button>
+    <button onClick={onClick}
+      className="px-2.5 py-0.5 rounded text-[10px] font-mono tracking-[0.06em] uppercase cursor-pointer transition-all border"
+      style={{
+        background:  active ? color + "1a" : "transparent",
+        color:       active ? color : "#6b7280",
+        borderColor: active ? color + "55" : "#2c2c2c",
+      }}>
+      {children}
+    </button>
   );
 }
 
 function TabBtn({ active, onClick, children }) {
   return (
-    <button onClick={onClick} style={{
-      background: "transparent",
-      color: active ? T.amber : T.textDim,
-      border: "none", borderBottom: `2px solid ${active ? T.amber : "transparent"}`,
-      padding: "9px 16px", fontSize: 10, fontFamily: T.mono,
-      letterSpacing: "0.08em", textTransform: "uppercase",
-      cursor: "pointer", transition: "color 0.12s, border-color 0.12s", whiteSpace: "nowrap",
-    }}>{children}</button>
+    <button onClick={onClick}
+      className={`px-4 py-2.5 text-[10px] font-mono tracking-[0.08em] uppercase cursor-pointer bg-transparent border-0 border-b-2 whitespace-nowrap transition-colors
+        ${active ? "text-amber border-amber" : "text-dim border-transparent"}`}>
+      {children}
+    </button>
   );
 }
 
-function StatCard({ label, value, unit = "", accent = T.text }) {
+function StatCard({ label, value, unit = "", accent }) {
   return (
-    <div style={{
-      background: T.surface3, border: `1px solid ${T.border}`, borderRadius: 6, padding: "10px 14px",
-    }}>
-      <div style={{ fontSize: 9, color: T.textDim, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6, fontFamily: T.mono }}>{label}</div>
-      <div style={{ fontSize: 20, fontFamily: T.mono, color: accent, fontWeight: 600, lineHeight: 1, letterSpacing: "-0.02em" }}>
-        {value}<span style={{ fontSize: 10, color: T.textDim, marginLeft: 3, fontWeight: 400 }}>{unit}</span>
+    <div className="bg-surface3 border border-border rounded-md px-3.5 py-2.5">
+      <div className="text-[9px] text-dim tracking-[0.1em] uppercase mb-1.5 font-mono">{label}</div>
+      <div className="text-xl font-mono font-semibold leading-none tracking-tight" style={{ color: accent }}>
+        {value}<span className="text-[10px] text-dim ml-1 font-normal">{unit}</span>
       </div>
     </div>
   );
 }
 
-function EmptyChart({ height = 160 }) {
+function EmptyChart() {
   return (
-    <div style={{
-      height, display: "flex", flexDirection: "column", alignItems: "center",
-      justifyContent: "center", color: T.textDim, fontFamily: T.mono,
-      fontSize: 11, border: `1px dashed ${T.border}`, borderRadius: 6,
-      gap: 8, letterSpacing: "0.05em",
-    }}>
+    <div className="flex flex-col items-center justify-center h-48 text-dim font-mono text-[11px] border border-dashed border-border rounded-md gap-2 tracking-[0.05em]">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-        <path d="M3 12h2l3-8 4 16 3-8h6" stroke={T.border} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M3 12h2l3-8 4 16 3-8h6" stroke="#2c2c2c" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
       awaiting signal…
     </div>
@@ -117,57 +94,39 @@ function EmptyChart({ height = 160 }) {
 function HeadersTab({ headers, onChange }) {
   const add    = () => onChange([...headers, { id: crypto.randomUUID(), key: "", value: "" }]);
   const remove = id => onChange(headers.filter(h => h.id !== id));
-  const update = (id, field, val) => onChange(headers.map(h => h.id === id ? { ...h, [field]: val } : h));
+  const update = (id, f, v) => onChange(headers.map(h => h.id === id ? { ...h, [f]: v } : h));
 
   return (
     <div>
       <Label>Request Headers</Label>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 28px", gap: 6, marginBottom: 6 }}>
-        <span style={{ fontSize: 9, color: T.textDim, fontFamily: T.mono, letterSpacing: "0.06em" }}>KEY</span>
-        <span style={{ fontSize: 9, color: T.textDim, fontFamily: T.mono, letterSpacing: "0.06em" }}>VALUE</span>
+      <div className="grid grid-cols-[1fr_2fr_28px] gap-1.5 mb-1.5">
+        <span className="text-[9px] text-dim font-mono tracking-[0.06em]">KEY</span>
+        <span className="text-[9px] text-dim font-mono tracking-[0.06em]">VALUE</span>
         <span />
       </div>
-
       {headers.map(h => (
-        <div key={h.id} style={{ display: "grid", gridTemplateColumns: "1fr 2fr 28px", gap: 6, marginBottom: 6 }}>
-          <Input value={h.key}   onChange={e => update(h.id, "key",   e.target.value)} placeholder="Header-Name" />
-          <Input value={h.value} onChange={e => update(h.id, "value", e.target.value)} placeholder="value" />
-          <button onClick={() => remove(h.id)} style={{
-            background: T.red + "15", color: T.red, border: `1px solid ${T.red}35`,
-            borderRadius: 4, cursor: "pointer", fontSize: 14, lineHeight: 1,
-          }}>×</button>
+        <div key={h.id} className="grid grid-cols-[1fr_2fr_28px] gap-1.5 mb-1.5">
+          <TextInput value={h.key}   onChange={e => update(h.id,"key",  e.target.value)} placeholder="Header-Name" />
+          <TextInput value={h.value} onChange={e => update(h.id,"value",e.target.value)} placeholder="value" />
+          <button onClick={() => remove(h.id)}
+            className="bg-danger/10 text-danger border border-danger/25 rounded cursor-pointer text-sm leading-none hover:bg-danger/20">
+            ×
+          </button>
         </div>
       ))}
-
-      <button
-        onClick={add}
-        style={{
-          background: "transparent", color: T.textDim, border: `1px dashed ${T.border}`,
-          borderRadius: 4, padding: "6px 12px", fontSize: 10, fontFamily: T.mono,
-          letterSpacing: "0.06em", cursor: "pointer", width: "100%", marginTop: 6,
-          transition: "color 0.12s, border-color 0.12s",
-        }}
-        onMouseEnter={e => { e.target.style.color = T.amber; e.target.style.borderColor = T.amber + "55"; }}
-        onMouseLeave={e => { e.target.style.color = T.textDim; e.target.style.borderColor = T.border; }}
-      >
+      <button onClick={add}
+        className="w-full mt-1.5 py-1.5 text-[10px] font-mono tracking-[0.06em] text-dim border border-dashed border-border rounded cursor-pointer bg-transparent hover:text-amber hover:border-amber/40 transition-colors">
         + Add Header
       </button>
-
-      <div style={{
-        marginTop: 14, background: T.surface, border: `1px solid ${T.border}`,
-        borderRadius: 4, padding: "8px 12px", fontSize: 10, color: T.textDim, fontFamily: T.mono, lineHeight: 1.6,
-      }}>
-        <span style={{ color: T.amber }}>※</span>{" "}
-        For local targets use <span style={{ color: T.green }}>http://host.docker.internal:PORT</span>
+      <div className="mt-3.5 bg-surface border border-border rounded px-3 py-2 text-[10px] text-dim font-mono leading-relaxed">
+        <span className="text-amber">※</span>{" "}
+        For local targets use <span className="text-success">http://host.docker.internal:PORT</span>
       </div>
     </div>
   );
 }
 
 // ── Body Tab ──────────────────────────────────────────────────────────────────
-const KEY_COLORS = { items: T.amber, email: T.blue, username: T.green, metadata: T.purple };
-const keyColor = k => KEY_COLORS[k] ?? T.textDim;
-
 function BodyTab({ body, onChange }) {
   let parsed = null, parseError = null;
   try { parsed = JSON.parse(body); } catch (e) { parseError = e.message; }
@@ -175,27 +134,23 @@ function BodyTab({ body, onChange }) {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+      <div className="flex justify-between items-center mb-2">
         <Label>JSON Payload</Label>
-        <span style={{ fontSize: 9, fontFamily: T.mono, color: parseError ? T.red : T.green, letterSpacing: "0.06em" }}>
+        <span className={`text-[9px] font-mono tracking-[0.06em] ${parseError ? "text-danger" : "text-success"}`}>
           {parseError ? "⚠ INVALID JSON" : "✓ VALID JSON"}
         </span>
       </div>
-
       <Textarea value={body} onChange={e => onChange(e.target.value)} />
-
       {keys.length > 0 && (
-        <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 5 }}>
-          <span style={{ fontSize: 9, color: T.textDim, fontFamily: T.mono, letterSpacing: "0.06em" }}>MUTATION KEYS →</span>
-          {keys.map(k => <Tag key={k} label={k} color={keyColor(k)} />)}
+        <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+          <span className="text-[9px] text-dim font-mono tracking-[0.06em]">MUTATION KEYS →</span>
+          {keys.map(k => <Tag key={k} label={k} color={keyCol(k)} />)}
         </div>
       )}
-
       {parseError && (
-        <div style={{
-          marginTop: 8, background: T.red + "10", border: `1px solid ${T.red}30`,
-          borderRadius: 4, padding: "6px 10px", fontSize: 10, color: T.red, fontFamily: T.mono,
-        }}>{parseError}</div>
+        <div className="mt-2 bg-danger/10 border border-danger/25 rounded px-2.5 py-1.5 text-[10px] text-danger font-mono">
+          {parseError}
+        </div>
       )}
     </div>
   );
@@ -212,33 +167,27 @@ function SettingsTab({ generations, populationSize, mode, onGenerationsChange, o
   return (
     <div>
       <Label>Engine Parameters</Label>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 20 }}>
+      <div className="grid grid-cols-2 gap-2.5 mb-5">
         <div>
-          <div style={{ fontSize: 9, color: T.textDim, fontFamily: T.mono, letterSpacing: "0.08em", marginBottom: 5 }}>GENERATIONS</div>
-          <Input type="number" value={generations} onChange={e => onGenerationsChange(Number(e.target.value))}
-            style={{ textAlign: "center", fontSize: 16, fontWeight: 600, color: T.amber }} />
+          <div className="text-[9px] text-dim font-mono tracking-[0.08em] mb-1.5">GENERATIONS</div>
+          <TextInput type="number" value={generations} onChange={e => onGenerationsChange(Number(e.target.value))}
+            className="text-center text-base font-semibold text-amber" />
         </div>
         <div>
-          <div style={{ fontSize: 9, color: T.textDim, fontFamily: T.mono, letterSpacing: "0.08em", marginBottom: 5 }}>POPULATION</div>
-          <Input type="number" value={populationSize} onChange={e => onPopulationSizeChange(Number(e.target.value))}
-            style={{ textAlign: "center", fontSize: 16, fontWeight: 600, color: T.blue }} />
+          <div className="text-[9px] text-dim font-mono tracking-[0.08em] mb-1.5">POPULATION</div>
+          <TextInput type="number" value={populationSize} onChange={e => onPopulationSizeChange(Number(e.target.value))}
+            className="text-center text-base font-semibold text-info" />
         </div>
       </div>
-
-      <div style={{ marginBottom: 10 }}>
-        <div style={{ fontSize: 9, color: T.textDim, fontFamily: T.mono, letterSpacing: "0.08em", marginBottom: 8 }}>MUTATION MODE</div>
-        <div style={{ display: "flex", gap: 6 }}>
-          {["adaptive", "baseline", "both"].map(m => (
-            <Pill key={m} active={mode === m} onClick={() => onModeChange(m)}>{m}</Pill>
+      <div className="mb-2.5">
+        <div className="text-[9px] text-dim font-mono tracking-[0.08em] mb-2">MUTATION MODE</div>
+        <div className="flex gap-1.5">
+          {["adaptive","baseline","both"].map(m => (
+            <Pill key={m} active={mode === m} onClick={() => onModeChange(m)} color="#f59e0b">{m}</Pill>
           ))}
         </div>
       </div>
-
-      <div style={{
-        marginTop: 14, background: T.surface, border: `1px solid ${T.border}`,
-        borderLeft: `3px solid ${T.amber}`, borderRadius: "0 4px 4px 0",
-        padding: "10px 12px", fontSize: 11, color: T.textDim, fontFamily: T.mono, lineHeight: 1.7,
-      }}>
+      <div className="mt-3.5 bg-surface border-y border-r border-l-2 border-border border-l-amber rounded-r px-3 py-2.5 text-[11px] text-dim font-mono leading-relaxed">
         {MODE_DESC[mode]}
       </div>
     </div>
@@ -248,15 +197,17 @@ function SettingsTab({ generations, populationSize, mode, onGenerationsChange, o
 // ── Live Stats ────────────────────────────────────────────────────────────────
 function LiveStats({ data }) {
   const peak      = data.length ? Math.max(...data.map(d => d.max_latency_ms)) : null;
-  const avgOfAvgs = data.length ? Math.round(data.reduce((s, d) => s + d.avg_latency_ms, 0) / data.length) : null;
-  const trend     = data.length > 1 ? data[data.length - 1].max_latency_ms - data[data.length - 2].max_latency_ms : null;
-  const trendAccent = trend === null ? T.textDim : trend > 50 ? T.red : trend > 0 ? T.amber : T.green;
+  const avgOfAvgs = data.length ? Math.round(data.reduce((s,d) => s + d.avg_latency_ms, 0) / data.length) : null;
+  const trend     = data.length > 1 ? Math.round(data[data.length-1].max_latency_ms - data[data.length-2].max_latency_ms) : null;
+  const trendColor= trend === null ? "#6b7280" : trend > 50 ? "#f87171" : trend > 0 ? "#f59e0b" : "#4ade80";
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 14 }}>
-      <StatCard label="Peak"     value={peak      ?? "—"} unit="ms" accent={T.red}  />
-      <StatCard label="Mean Avg" value={avgOfAvgs ?? "—"} unit="ms" accent={T.blue} />
-      <StatCard label="Δ Trend"  value={trend !== null ? (trend >= 0 ? `+${trend}` : `${trend}`) : "—"} unit="ms" accent={trendAccent} />
+    <div className="grid grid-cols-3 gap-2 mb-3.5">
+      <StatCard label="Peak"     value={peak      ?? "—"} unit="ms" accent="#f87171" />
+      <StatCard label="Mean Avg" value={avgOfAvgs ?? "—"} unit="ms" accent="#60a5fa" />
+      <StatCard label="Δ Trend"
+        value={trend !== null ? (trend >= 0 ? `+${trend}` : `${trend}`) : "—"}
+        unit="ms" accent={trendColor} />
     </div>
   );
 }
@@ -266,39 +217,37 @@ function LatencyChart({ data }) {
   const ref = useRef(null);
   useEffect(() => { ref.current?.update("none"); }, [data]);
 
-  if (!data.length) return <EmptyChart height={160} />;
+  if (!data.length) return <EmptyChart />;
 
   const chartData = {
     labels: data.map(d => d.generation),
     datasets: [
-      { label: "max", data: data.map(d => d.max_latency_ms), borderColor: T.red,  backgroundColor: T.red  + "18", borderWidth: 1.5, pointRadius: 0, tension: 0.4, fill: true  },
-      { label: "avg", data: data.map(d => d.avg_latency_ms), borderColor: T.blue, backgroundColor: "transparent",  borderWidth: 1.5, pointRadius: 0, tension: 0.4, fill: false },
+      { label:"max", data: data.map(d => d.max_latency_ms), borderColor:"#f87171", backgroundColor:"#f8717118", borderWidth:1.5, pointRadius:0, tension:0.4, fill:true  },
+      { label:"avg", data: data.map(d => d.avg_latency_ms), borderColor:"#60a5fa", backgroundColor:"transparent",  borderWidth:1.5, pointRadius:0, tension:0.4, fill:false },
     ],
   };
 
-  return <div style={{ height: 160 }}><Line ref={ref} data={chartData} options={chartDefaults} /></div>;
+  return <div className="h-48"><Line ref={ref} data={chartData} options={chartDefaults} /></div>;
 }
 
 // ── Main (exported) ───────────────────────────────────────────────────────────
-export function Main({
-  headers, body, generations, populationSize, mode, genData,
-  onHeadersChange, onBodyChange, onGenerationsChange, onPopulationSizeChange, onModeChange,
-}) {
+export function Main({ headers, body, generations, populationSize, mode, genData,
+  onHeadersChange, onBodyChange, onGenerationsChange, onPopulationSizeChange, onModeChange }) {
   const [tab, setTab] = useState("headers");
 
   return (
-    <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+    <div className="flex flex-1 overflow-hidden">
 
       {/* LEFT — config tabs */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <div style={{ display: "flex", borderBottom: `1px solid ${T.border}`, padding: "0 6px", flexShrink: 0 }}>
-          {["headers", "body", "settings"].map(t => (
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex border-b border-border px-1.5 shrink-0">
+          {["headers","body","settings"].map(t => (
             <TabBtn key={t} active={tab === t} onClick={() => setTab(t)}>{t}</TabBtn>
           ))}
         </div>
-        <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
+        <div className="flex-1 overflow-auto p-4">
           {tab === "headers"  && <HeadersTab  headers={headers} onChange={onHeadersChange} />}
-          {tab === "body"     && <BodyTab     body={body}        onChange={onBodyChange}    />}
+          {tab === "body"     && <BodyTab     body={body}       onChange={onBodyChange}    />}
           {tab === "settings" && (
             <SettingsTab
               generations={generations} populationSize={populationSize} mode={mode}
@@ -310,16 +259,12 @@ export function Main({
         </div>
       </div>
 
-      {/* Vertical divider */}
-      <div style={{ width: 1, background: T.border, flexShrink: 0 }} />
+      <div className="w-px bg-border shrink-0" />
 
-      {/* RIGHT — live telemetry */}
-      <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
-        <div style={{
-          fontSize: 9, color: T.textDim, fontFamily: T.mono, letterSpacing: "0.1em",
-          textTransform: "uppercase", marginBottom: 12, display: "flex", alignItems: "center", gap: 6,
-        }}>
-          <span style={{ width: 5, height: 5, borderRadius: "50%", background: genData.length ? T.green : T.textDim, display: "inline-block" }} />
+      {/* RIGHT — live telemetry + chart */}
+      <div className="flex-1 overflow-auto p-4">
+        <div className="flex items-center gap-1.5 text-[9px] text-dim font-mono tracking-[0.1em] uppercase mb-3">
+          <span className={`w-1.5 h-1.5 rounded-full inline-block ${genData.length ? "bg-success" : "bg-dim"}`} />
           Live Telemetry
         </div>
         <LiveStats data={genData} />

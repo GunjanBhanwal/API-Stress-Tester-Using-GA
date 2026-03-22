@@ -1,140 +1,144 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import {
-  Chart as ChartJS, CategoryScale, LinearScale,
-  PointElement, LineElement, Title, Tooltip, Legend,
-} from "chart.js";
-import { Line } from "react-chartjs-2";
+import { useRef, useEffect, useMemo } from "react";
 
-import { T, chartDefaults, globalCSS, Header } from "../components/Header";
-import { Main } from "../components/Main";
+const PALETTE = ["#f59e0b","#60a5fa","#4ade80","#a78bfa","#f87171","#f472b6","#34d399","#818cf8"];
+const keyColor = (key, allKeys) => PALETTE[allKeys.indexOf(key) % PALETTE.length];
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
-
-// ── Mock data generator ───────────────────────────────────────────────────────
-const MOCK_KEYS = ["items", "email", "username", "metadata"];
-
-function genMockGenerations(count = 50) {
-  let baseMax = 130, baseAvg = 65;
-  const w = { items: 0.25, email: 0.25, username: 0.25, metadata: 0.25 };
-  return Array.from({ length: count }, (_, i) => {
-    const spike = Math.random() > 0.82 ? Math.random() * 500 : 0;
-    baseMax = Math.min(1400, Math.max(80, baseMax + (Math.random() - 0.44) * 70 + spike));
-    baseAvg = Math.min(baseMax * 0.88, Math.max(40, baseAvg + (Math.random() - 0.44) * 35));
-    const best_key_mutated = MOCK_KEYS[Math.floor(Math.random() * MOCK_KEYS.length)];
-    if (best_key_mutated === "items") w.items = Math.min(0.88, w.items + 0.018);
-    MOCK_KEYS.forEach(k => { if (k !== best_key_mutated) w[k] = Math.max(0.02, w[k] - 0.005); });
-    const total = Object.values(w).reduce((a, b) => a + b, 0);
-    MOCK_KEYS.forEach(k => (w[k] /= total));
-    return { generation: i + 1, max_latency_ms: Math.round(baseMax), avg_latency_ms: Math.round(baseAvg), best_key_mutated, weights: { ...w } };
-  });
-}
-
-export const mockGenerations = genMockGenerations(50);
-
-// ── Shared helpers ────────────────────────────────────────────────────────────
-const KEY_COLORS = { items: T.amber, email: T.blue, username: T.green, metadata: T.purple };
-const keyColor = k => KEY_COLORS[k] ?? T.textDim;
-
-function Tag({ label, color = T.amber }) {
+function Tag({ label, color }) {
   return (
-    <span style={{
-      background: color + "18", color, border: `1px solid ${color}40`,
-      borderRadius: 3, padding: "1px 8px", fontSize: 10,
-      fontFamily: T.mono, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap",
-    }}>{label}</span>
+    <span className="rounded px-2 py-0.5 text-[10px] font-mono tracking-[0.06em] uppercase whitespace-nowrap border"
+      style={{ background: color + "18", color, borderColor: color + "40" }}>
+      {label}
+    </span>
   );
 }
 
-function Pill({ active, onClick, children, color = T.amber }) {
+function Pill({ active, onClick, children, color }) {
   return (
-    <button onClick={onClick} style={{
-      background: active ? color + "1a" : "transparent",
-      color: active ? color : T.textDim,
-      border: `1px solid ${active ? color + "55" : T.border}`,
-      borderRadius: 4, padding: "3px 10px", fontSize: 10,
-      fontFamily: T.mono, letterSpacing: "0.06em",
-      cursor: "pointer", transition: "all 0.12s", textTransform: "uppercase",
-    }}>{children}</button>
+    <button onClick={onClick}
+      className="px-2.5 py-0.5 rounded text-[10px] font-mono tracking-[0.06em] uppercase cursor-pointer transition-all border"
+      style={{
+        background:  active ? color + "1a" : "transparent",
+        color:       active ? color : "#6b7280",
+        borderColor: active ? color + "55" : "#2c2c2c",
+      }}>
+      {children}
+    </button>
   );
 }
 
-function EmptyChart({ height = 140 }) {
+// ── Summary Cards 
+function SummaryCards({ data }) {
+  if (!data.length) {
+    return (
+      <div className="h-full flex items-center justify-center font-mono text-[11px] text-dim tracking-[0.05em]">
+        — awaiting data —
+      </div>
+    );
+  }
+
+  const gens       = data.filter(d => d.generation > 0);
+  const baseline   = data[0]?.max_latency_ms ?? 0;
+  const latencies  = gens.map(d => d.max_latency_ms);
+  const diversities= gens.map(d => d.diversity_score);
+  const firs       = gens.map(d => d.fitness_improvement_rate).filter(v => v != null);
+  const peak       = gens.length ? Math.max(...latencies) : 0;
+  const peakGen    = gens.find(d => d.max_latency_ms === peak)?.generation ?? "—";
+  const avgLat     = gens.length ? Math.round(gens.reduce((s,d) => s + d.avg_latency_ms,0) / gens.length) : 0;
+  const convGen    = gens.find(d => d.weights && Math.max(...Object.values(d.weights)) > 0.6)?.generation ?? "—";
+  const finalW     = gens.length ? gens[gens.length-1].weights : {};
+  const topKey     = Object.keys(finalW).length ? Object.keys(finalW).reduce((a,b) => finalW[a] > finalW[b] ? a : b) : "—";
+  const topWeight  = finalW[topKey] != null ? (finalW[topKey]*100).toFixed(1) : "—";
+  const initDiv    = diversities.length ? diversities[0].toFixed(4) : "—";
+  const finalDiv   = diversities.length ? diversities[diversities.length-1].toFixed(4) : "—";
+  const avgFir     = firs.length ? (firs.reduce((a,b) => a+b,0)/firs.length).toFixed(2) : "—";
+
+  const metrics = [
+    { label:"Baseline Lat",   value:`${baseline.toFixed(2)}`, unit:"ms", accent:"#60a5fa" },
+    { label:"Peak Latency",   value:`${peak.toFixed(2)}`,     unit:"ms", accent:"#f87171" },
+    { label:"Peak at Gen",    value:String(peakGen),          unit:"",   accent:"#f87171" },
+    { label:"Avg Latency",    value:String(avgLat),           unit:"ms", accent:"#60a5fa" },
+    { label:"Converged Gen",  value:String(convGen),          unit:"",   accent:"#4ade80" },
+    { label:"Top Key",        value:topKey,                   unit:"",   accent:"#f59e0b" },
+    { label:"Top Weight",     value:topWeight,                unit:"%",  accent:"#f59e0b" },
+    { label:"Init Diversity", value:initDiv,                  unit:"",   accent:"#60a5fa" },
+    { label:"Final Diversity",value:finalDiv,                 unit:"",   accent:"#6b7280" },
+    { label:"Avg FIR",        value:avgFir,                   unit:"%",  accent:"#4ade80" },
+  ];
+
   return (
-    <div style={{
-      height, display: "flex", flexDirection: "column", alignItems: "center",
-      justifyContent: "center", color: T.textDim, fontFamily: T.mono,
-      fontSize: 11, border: `1px dashed ${T.border}`, borderRadius: 6,
-      gap: 8, letterSpacing: "0.05em",
-    }}>
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-        <path d="M3 12h2l3-8 4 16 3-8h6" stroke={T.border} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-      awaiting signal…
+    <div className="p-2.5 h-full overflow-y-auto">
+      <div className="text-[9px] text-dim font-mono tracking-[0.1em] uppercase mb-2">
+        <span className="text-amber">≈</span> Run Summary
+      </div>
+      <div className="grid grid-cols-5 gap-1">
+        {metrics.map(({ label, value, unit, accent }) => (
+          <div key={label} className="bg-surface3 border border-border rounded px-2 py-1.5"
+            style={{ borderTopWidth:"2px", borderTopColor: accent }}>
+            <div className="text-[7px] text-dim font-mono tracking-[0.07em] uppercase mb-1 truncate">{label}</div>
+            <div className="text-[13px] font-mono font-semibold leading-none truncate" style={{ color: accent }}>
+              {value}
+              {unit && <span className="text-[8px] text-dim ml-0.5 font-normal">{unit}</span>}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
-// ── Generation Log ────────────────────────────────────────────────────────────
-const ALL_FILTERS = ["all", "items", "email", "username", "metadata"];
-
-function GenerationLog({ data, filter, onFilterChange }) {
+// ── Generation Log
+function GenerationLog({ data, filter, onFilterChange, allKeys }) {
   const scrollRef = useRef(null);
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [data.length]);
 
+  const filters  = ["all", ...allKeys];
   const filtered = filter === "all" ? data : data.filter(d => d.best_key_mutated === filter);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", overflow: "hidden", flex: 1 }}>
-      {/* Log header */}
-      <div style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "8px 16px", borderBottom: `1px solid ${T.border}`, flexShrink: 0,
-      }}>
-        <div style={{ fontSize: 9, color: T.textDim, fontFamily: T.mono, letterSpacing: "0.1em", textTransform: "uppercase" }}>
-          Generation Log <span style={{ color: T.amber }}>({data.length})</span>
+    <div className="flex flex-col overflow-hidden flex-1">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-border shrink-0">
+        <div className="text-[9px] text-dim font-mono tracking-[0.1em] uppercase">
+          Generation Log <span className="text-amber">({data.length})</span>
         </div>
-        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-          {ALL_FILTERS.map(f => (
-            <Pill key={f} active={filter === f} onClick={() => onFilterChange(f)} color={f === "all" ? T.textDim : keyColor(f)}>
+        <div className="flex gap-1 flex-wrap">
+          {filters.map(f => (
+            <Pill key={f} active={filter===f} onClick={() => onFilterChange(f)}
+              color={f==="all" ? "#6b7280" : keyColor(f, allKeys)}>
               {f}
             </Pill>
           ))}
         </div>
       </div>
 
-      {/* Table */}
-      <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+      <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0">
         {!filtered.length ? (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 80, fontFamily: T.mono, fontSize: 11, color: T.textDim, letterSpacing: "0.05em" }}>
+          <div className="flex items-center justify-center h-20 font-mono text-[11px] text-dim tracking-[0.05em]">
             — no entries —
           </div>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, fontFamily: T.mono }}>
+          <table className="w-full border-collapse text-[11px] font-mono">
             <thead>
-              <tr style={{ position: "sticky", top: 0, background: T.surface2, zIndex: 1 }}>
-                {[["GEN","50px"],["MAX ms","72px"],["AVG ms","72px"],["BEST KEY","110px"],["WEIGHTS",null]].map(([h, w]) => (
-                  <th key={h} style={{
-                    padding: "5px 14px", textAlign: "left", fontSize: 8, color: T.textDim,
-                    letterSpacing: "0.09em", fontWeight: 500,
-                    borderBottom: `1px solid ${T.border}`, width: w ?? "auto",
-                  }}>{h}</th>
+              <tr className="sticky top-0 bg-surface2 z-10">
+                {[["GEN","50px"],["MAX ms","72px"],["AVG ms","72px"],["BEST KEY","110px"],["WEIGHTS",null]].map(([h,w]) => (
+                  <th key={h} className="px-3.5 py-1.5 text-left text-[8px] text-dim tracking-[0.09em] font-medium border-b border-border"
+                    style={{ width: w ?? "auto" }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {filtered.map((d, i) => (
-                <tr key={d.generation} className={i % 2 === 0 ? "log-row-even" : "log-row-odd"} style={{ animation: "fade-in 0.2s ease" }}>
-                  <td style={{ padding: "4px 14px", color: T.textDim }}>{d.generation}</td>
-                  <td style={{ padding: "4px 14px", color: T.red,  fontWeight: 600 }}>{d.max_latency_ms}</td>
-                  <td style={{ padding: "4px 14px", color: T.blue }}>{d.avg_latency_ms}</td>
-                  <td style={{ padding: "4px 14px" }}><Tag label={d.best_key_mutated} color={keyColor(d.best_key_mutated)} /></td>
-                  <td style={{ padding: "4px 14px" }}>
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      {Object.entries(d.weights).map(([k, v]) => (
-                        <span key={k} style={{ fontSize: 9, color: keyColor(k), letterSpacing: "0.04em" }}>
-                          {k[0].toUpperCase()}:{Math.round(v * 100)}%
+                <tr key={d.generation} className={`${i%2===0 ? "bg-transparent" : "bg-surface/40"} hover:bg-surface3`}>
+                  <td className="px-3.5 py-1 text-dim">{d.generation}</td>
+                  <td className="px-3.5 py-1 text-danger font-semibold">{d.max_latency_ms}</td>
+                  <td className="px-3.5 py-1 text-info">{d.avg_latency_ms}</td>
+                  <td className="px-3.5 py-1"><Tag label={d.best_key_mutated} color={keyColor(d.best_key_mutated, allKeys)} /></td>
+                  <td className="px-3.5 py-1">
+                    <div className="flex gap-1.5 flex-wrap">
+                      {Object.entries(d.weights).map(([k,v]) => (
+                        <span key={k} className="text-[9px] tracking-[0.04em]" style={{ color: keyColor(k, allKeys) }}>
+                          {k[0].toUpperCase()}:{Math.round(v*100)}%
                         </span>
                       ))}
                     </div>
@@ -149,155 +153,23 @@ function GenerationLog({ data, filter, onFilterChange }) {
   );
 }
 
-// ── Weight Drift Chart ────────────────────────────────────────────────────────
-function WeightChart({ data }) {
-  const ref = useRef(null);
-  useEffect(() => { ref.current?.update("none"); }, [data]);
-
-  if (!data.length) return <EmptyChart height={140} />;
-
-  const chartData = {
-    labels: data.map(d => d.generation),
-    datasets: [
-      { label: "items",    data: data.map(d => Math.round(d.weights.items    * 100)), borderColor: T.amber,  backgroundColor: T.amber + "22", borderWidth: 1.5, pointRadius: 0, tension: 0.4, fill: true  },
-      { label: "email",    data: data.map(d => Math.round(d.weights.email    * 100)), borderColor: T.blue,   backgroundColor: "transparent",  borderWidth: 1,   pointRadius: 0, tension: 0.4, fill: false },
-      { label: "username", data: data.map(d => Math.round(d.weights.username * 100)), borderColor: T.green,  backgroundColor: "transparent",  borderWidth: 1,   pointRadius: 0, tension: 0.4, fill: false },
-      { label: "metadata", data: data.map(d => Math.round(d.weights.metadata * 100)), borderColor: T.purple, backgroundColor: "transparent",  borderWidth: 1,   pointRadius: 0, tension: 0.4, fill: false },
-    ],
-  };
-
-  const options = {
-    ...chartDefaults,
-    scales: {
-      ...chartDefaults.scales,
-      y: { ...chartDefaults.scales.y, min: 0, max: 100, ticks: { ...chartDefaults.scales.y.ticks, callback: v => v + "%" } },
-    },
-  };
-
-  return <div style={{ height: 140 }}><Line ref={ref} data={chartData} options={options} /></div>;
-}
-
-// ── Footer (exported) ─────────────────────────────────────────────────────────
+// ── Footer (exported)
 export function Footer({ genData, logFilter, onFilterChange }) {
-  return (
-    <div style={{ display: "flex", borderTop: `1px solid ${T.border}`, flexShrink: 0, height: 240 }}>
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <GenerationLog data={genData} filter={logFilter} onFilterChange={onFilterChange} />
-      </div>
+  const allKeys = useMemo(() => {
+    if (!genData.length) return [];
+    const first = genData.find(d => d.weights && Object.keys(d.weights).length > 0);
+    return first ? Object.keys(first.weights) : [];
+  }, [genData]);
 
-      <div style={{ width: 1, background: T.border, flexShrink: 0 }} />
-      <div style={{ flex: 1, padding: "10px 14px", display: "flex", flexDirection: "column" }}>
-        <div style={{ fontSize: 9, color: T.textDim, fontFamily: T.mono, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>
-          <span style={{ color: T.amber }}>≈</span> Mutation Weight Drift
-        </div>
-        <div style={{ flex: 1 }}>
-          <WeightChart data={genData} />
-        </div>
+  return (
+    <div className="flex border-t border-border shrink-0 h-60">
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <GenerationLog data={genData} filter={logFilter} onFilterChange={onFilterChange} allKeys={allKeys} />
+      </div>
+      <div className="w-px bg-border shrink-0" />
+      <div className="flex-1 overflow-hidden">
+        <SummaryCards data={genData} />
       </div>
     </div>
-  );
-}
-
-const DEFAULT_HEADERS = [
-  { id: "1", key: "Authorization", value: "Bearer eyJhbGci..." },
-  { id: "2", key: "Content-Type",  value: "application/json"  },
-];
-
-const DEFAULT_BODY = `{
-  "username": "test",
-  "email": "test@test.com",
-  "items": [1, 2, 3],
-  "metadata": "none"
-}`;
-
-const USE_MOCK = true; 
-
-export default function Index() {
-  const [method,         setMethod]         = useState("POST");
-  const [url,            setUrl]            = useState("http://victim:5000/api/data");
-  const [headers,        setHeaders]        = useState(DEFAULT_HEADERS);
-  const [body,           setBody]           = useState(DEFAULT_BODY);
-  const [generations,    setGenerations]    = useState(50);
-  const [populationSize, setPopulationSize] = useState(10);
-  const [mode,           setMode]           = useState("adaptive");
-  const [status,         setStatus]         = useState("idle");
-  const [genData,        setGenData]        = useState([]);
-  const [logFilter,      setLogFilter]      = useState("all");
-
-  const timerRef   = useRef(null);
-  const mockIdxRef = useRef(0);
-
-  const clearTimer = useCallback(() => {
-    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-  }, []);
-
-  const stopEngine = useCallback(() => { clearTimer(); setStatus("complete"); }, [clearTimer]);
-
-  const startEngine = useCallback(async () => {
-    setGenData([]);
-    setStatus("running");
-
-    if (USE_MOCK) {
-      mockIdxRef.current = 0;
-      timerRef.current = setInterval(() => {
-        if (mockIdxRef.current >= mockGenerations.length) { stopEngine(); return; }
-        mockIdxRef.current += 1;
-        setGenData(mockGenerations.slice(0, mockIdxRef.current));
-      }, 400);
-      return;
-    }
-
-    // Real API path — uncomment and import api when USE_MOCK = false
-    // try {
-    //   const hdrs = {};
-    //   headers.forEach(h => { if (h.key) hdrs[h.key] = h.value; });
-    //   await api.startEngine({ url, method, headers: hdrs, body, generations, population: populationSize, mode });
-    //   timerRef.current = setInterval(async () => {
-    //     try {
-    //       const res = await api.fetchStatus();
-    //       setGenData(res.data);
-    //       if (res.status === "complete" || res.status === "error") { setStatus(res.status); clearTimer(); }
-    //     } catch {}
-    //   }, 2000);
-    // } catch { setStatus("error"); }
-  }, [stopEngine, clearTimer]);
-
-  useEffect(() => () => clearTimer(), [clearTimer]);
-
-  const currentGen = genData.length ? genData[genData.length - 1].generation : 0;
-
-  return (
-    <>
-      <style>{globalCSS}</style>
-
-      <div style={{ background: T.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-        <div style={{
-          display: "flex", flexDirection: "column",
-          width: "100%", maxWidth: 1140,
-          height: "calc(100vh - 32px)", maxHeight: 740,
-          background: T.surface2, border: `1px solid ${T.border}`,
-          borderRadius: 10, overflow: "hidden",
-          boxShadow: "0 0 0 1px #000, 0 32px 80px rgba(0,0,0,0.8)",
-        }}>
-          <Header
-            status={status} currentGen={currentGen} totalGens={generations}
-            method={method} url={url}
-            onMethodChange={setMethod} onUrlChange={setUrl}
-            onRun={startEngine} onStop={stopEngine}
-          />
-
-          <Main
-            headers={headers} body={body}
-            generations={generations} populationSize={populationSize} mode={mode}
-            genData={genData}
-            onHeadersChange={setHeaders} onBodyChange={setBody}
-            onGenerationsChange={setGenerations} onPopulationSizeChange={setPopulationSize}
-            onModeChange={setMode}
-          />
-
-          <Footer genData={genData} logFilter={logFilter} onFilterChange={setLogFilter} />
-        </div>
-      </div>
-    </>
   );
 }
